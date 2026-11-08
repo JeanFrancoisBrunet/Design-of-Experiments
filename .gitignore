@@ -4,6 +4,8 @@ __pycache__/
 *.log
 *.lock
 *.zip
+
+# Exclusion des modèles IA lourds
 *.pt
 *.onnx
 
