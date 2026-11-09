@@ -27,6 +27,7 @@ grille_panneaux <- function(n, max_col = 4) { nc <- min(n, max_col); c(ceiling(n
 
 # ---------------------------------------------------------------------------
 fig_pareto <- function(dossier, nom, labels, valeurs, seuil, titre, xlab, ech, ligne_lib = NULL) {
+  if (length(valeurs) < 1 || !any(is.finite(valeurs))) return(character(0))
   o <- order(valeurs, decreasing = TRUE)
   o <- o[seq_len(min(length(o), 25))]
   v <- valeurs[o]; lab <- labels[o]
@@ -47,6 +48,7 @@ fig_pareto <- function(dossier, nom, labels, valeurs, seuil, titre, xlab, ech, l
 
 fig_daniel <- function(dossier, nom, labels, effets, signif, ech) {
   m <- length(effets)
+  if (m < 3 || !all(is.finite(effets)) || diff(range(effets)) <= 0) return(character(0))
   o <- order(effets); e <- effets[o]; lab <- labels[o]; sg <- signif[o]
   q <- stats::qnorm(stats::ppoints(m))
   ouvrir_png(dossier, nom, ech)

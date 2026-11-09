@@ -133,6 +133,13 @@ def table_texte(cols, rows, libre=False):
     return "\n".join([ligne(ent), "  ".join("-" * w for w in larg)] + [ligne(r) for r in cellules])
 
 
+def _cellules(v):
+    """Colonne d'un tableau : une valeur isolée (ou manquante) devient une colonne d'une ligne."""
+    if v is None:
+        return [None]
+    return _liste(v)
+
+
 def _liste(v):
     if v is None:
         return []
@@ -384,7 +391,7 @@ class Resultat:
                 if not isinstance(t, dict) or not t:
                     continue
                 cols = list(t.keys())
-                vals = [_liste(t[c]) for c in cols]
+                vals = [_cellules(t[c]) for c in cols]
                 self.tables[nom] = (cols, [list(r) for r in zip(*vals)])
 
     def texte(self, titres=True):
@@ -478,7 +485,7 @@ def generer_plan(famille, commande, params, facteurs):
     tables = {}
     for nom, t in (brut.get("tables") or {}).items():
         if isinstance(t, dict):
-            tables[nom] = {c: _liste(v) for c, v in t.items()}
+            tables[nom] = {c: _cellules(v) for c, v in t.items()}
     meta = brut.get("meta") or {}
     return Plan(famille, facteurs, cols, meta, str(brut.get("titre", "")), [str(x) for x in _liste(brut.get("lignes"))], tables)
 
@@ -1531,7 +1538,7 @@ class Famille:
         texte = [p.titre, "=" * len(p.titre), ""] + p.lignes
         for nom, t in p.tables.items():
             cl = list(t.keys())
-            rows = [list(r) for r in zip(*[_liste(t[c]) for c in cl])]
+            rows = [list(r) for r in zip(*[_cellules(t[c]) for c in cl])]
             texte += ["", libelle(nom), table_texte(cl, rows, libre=True)]
         self.desc.insert("1.0", "\n".join(texte))
         self.desc.configure(state="disabled")

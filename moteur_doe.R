@@ -466,7 +466,7 @@ analyser_modele <- function(ctx, par) {
 
   # -- conclusion
   if (length(signif_labels)) {
-    lignes <- c(lignes, "", sprintf("Termes significatifs au risque α = %s : %s.", fr(alpha, 3), paste(signif_labels, collapse = ", ")))
+    lignes <- c(lignes, "", sprintf("Termes significatifs au risque α = %s : %s.", fr(alpha, 3), if (length(signif_labels)) paste(signif_labels, collapse = ", ") else "aucun"))
     concl <- sprintf("Significatifs (α = %s) : %s ; R² ajusté = %s.", fr(alpha, 3), paste(signif_labels, collapse = ", "), fr(res$r2aj, 3))
   } else { lignes <- c(lignes, "", sprintf("Aucun terme n'est significatif au risque α = %s.", fr(alpha, 3))); concl <- sprintf("Aucun terme significatif (α = %s).", fr(alpha, 3)) }
   if ("Courbure (points centraux)" %in% labels && mod$df > 0) {
