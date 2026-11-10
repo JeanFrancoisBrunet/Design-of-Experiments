@@ -32,10 +32,13 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import zipfile
 from pathlib import Path
 
 DOSSIER = Path(__file__).resolve().parent
+ONGLET_DEFAUT = "factoriel"          # famille affichée à l'ouverture
+DUREE_ACCUEIL = 4.0          # durée minimale d'affichage de l'écran d'accueil (secondes)
 ICONE = DOSSIER / "icons" / "DOE.png"
 SCRIPT_R = DOSSIER / "cli_doe.R"
 FICHIERS_R = ("cli_doe.R", "plans_doe.R", "moteur_doe.R", "graphiques_doe.R", "taguchi_doe.R")
@@ -369,6 +372,41 @@ def lire_tableau_texte(texte):
 # =============================================================================
 #  Résultats de R
 # =============================================================================
+def integrer_reponses(p, texte, ordre_standard):
+    """Intègre dans le plan p des réponses collées (colonnes, nom en première ligne facultatif) ; retourne le nombre de colonnes."""
+    entete, vals = lire_tableau_texte(texte)
+    if len(vals) != p.n:
+        raise ErreurDOE(f"Le plan compte {p.n} essais, mais {len(vals)} ligne(s) de valeurs ont été fournies.")
+    ncol = max(len(r) for r in vals)
+    if entete:
+        noms = [(entete[j] if j < len(entete) and entete[j] else None) for j in range(ncol)]
+    else:
+        noms = [p.reponses[j] if j < len(p.reponses) else None for j in range(ncol)]
+    # indice du plan pour chaque ligne fournie
+    if ordre_standard:
+        pos = {int(s): i for i, s in enumerate(p.cols["Ordre_standard"])}
+        cible = [pos.get(r + 1) for r in range(p.n)]
+        if None in cible:
+            raise ErreurDOE("L'ordre standard du plan est incomplet.")
+    else:
+        cible = list(range(p.n))
+    existant = set(p.reponses)
+    nouveaux = []
+    for j in range(ncol):
+        nom = noms[j] or p.nom_reponse_libre()
+        if nom not in existant and nom not in nouveaux:
+            p.verifier_nom_reponse(nom)
+        noms[j] = nom
+        nouveaux.append(nom)
+    for j, nom in enumerate(noms):
+        if nom not in p.cols:
+            p.ajouter_reponse(nom)
+        col = p.cols[nom]
+        for r, i in enumerate(cible):
+            col[i] = vals[r][j] if j < len(vals[r]) else None
+    return ncol
+
+
 class Resultat:
     """Résultat d'une analyse R : titre, lignes de texte, tableaux, figures PNG, remarques."""
 
@@ -1668,37 +1706,7 @@ class Famille:
         DialogueCollage(self)
 
     def integrer_reponses(self, texte, ordre_standard):
-        entete, vals = lire_tableau_texte(texte)
-        p = self.plan
-        if len(vals) != p.n:
-            raise ErreurDOE(f"Le plan compte {p.n} essais, mais {len(vals)} ligne(s) de valeurs ont été fournies.")
-        ncol = max(len(r) for r in vals)
-        if entete:
-            noms = [(entete[j] if j < len(entete) and entete[j] else None) for j in range(ncol)]
-        else:
-            noms = [p.reponses[j] if j < len(p.reponses) else None for j in range(ncol)]
-        # indice du plan pour chaque ligne fournie
-        if ordre_standard:
-            pos = {int(s): i for i, s in enumerate(p.cols["Ordre_standard"])}
-            cible = [pos.get(r + 1) for r in range(p.n)]
-            if None in cible:
-                raise ErreurDOE("L'ordre standard du plan est incomplet.")
-        else:
-            cible = list(range(p.n))
-        existant = set(p.reponses)
-        nouveaux = []
-        for j in range(ncol):
-            nom = noms[j] or p.nom_reponse_libre()
-            if nom not in existant and nom not in nouveaux:
-                p.verifier_nom_reponse(nom)
-            noms[j] = nom
-            nouveaux.append(nom)
-        for j, nom in enumerate(noms):
-            if nom not in p.cols:
-                p.ajouter_reponse(nom)
-            col = p.cols[nom]
-            for r, i in enumerate(cible):
-                col[i] = vals[r][j] if j < len(vals[r]) else None
+        ncol = integrer_reponses(self.plan, texte, ordre_standard)
         self.afficher_plan()
         self.maj_formulaires()
         self.app.statut(f"{ncol} colonne(s) de réponses enregistrée(s).")
@@ -2129,7 +2137,7 @@ class Famille:
 #  Aide
 # =============================================================================
 TEXTE_AIDE = """\
-DÉMARCHE GÉNÉRALE
+Démarche Générale :
 Chaque famille de plans suit les mêmes étapes, dans les sous-onglets :
   1. Plan : définir les facteurs, choisir les options, générer la matrice d'essais, puis saisir les réponses mesurées
      (double-clic dans une cellule marquée ✎, ou « Saisir ou coller des réponses… »).
@@ -2138,7 +2146,7 @@ Chaque famille de plans suit les mêmes étapes, dans les sous-onglets :
   3. Graphiques du modèle (factoriel, surface, mélange) : lignes de niveau, surface 3D ou diagramme ternaire.
   4. Prévision et optimisation : prévision avec intervalles, puis recherche des réglages optimaux.
 
-FAMILLES
+Familles :
   Criblage : repérer les facteurs influents avec un minimum d'essais (Plackett-Burman ou fractions à 2 niveaux).
   Factoriel : plans complets ou fractionnaires à 2 niveaux (générateurs, résolution et structure d'alias affichées),
      analyse des effets et interactions, réduction du modèle, prévision et optimisation.
@@ -2147,14 +2155,14 @@ FAMILLES
   Surface : plans composites centrés et Box-Behnken, modèle du second degré, point stationnaire, optimisation.
   Mélange : composants dont la somme vaut 1, modèles de Scheffé, diagramme ternaire, optimisation.
 
-SAISIE DES NOMBRES
+Saisie des Nombres :
   La virgule et le point sont acceptés comme séparateur décimal. Dans un plan de Taguchi, les niveaux d'un facteur
   sont séparés par des points-virgules.
 
-PLAN ALÉATOIRE
+Plan Aléatoire :
   L'ordre d'exécution est aléatoire par défaut. Une valeur d'initialisation permet de reproduire le même ordre.
 
-RAPPORT ET PROJET
+Rapport & Projet :
   Chaque résultat calculé est ajouté au rapport. L'onglet Rapport permet de choisir les résultats à inclure et
   d'exporter un document HTML. Le projet complet (plans, réponses et résultats) s'enregistre dans un fichier
   « .doeproj » et peut être rouvert plus tard.
@@ -2211,6 +2219,7 @@ class Application:
         self.chemin_projet = None
         self.v_alpha = tk.StringVar(value="0,05")
         accueil = EcranAccueil(self.root)
+        debut_accueil = time.time()
         ok, msg = verifier_r()
         accueil.message(msg if not ok else "Préparation de l'interface…")
         try:
@@ -2231,6 +2240,9 @@ class Application:
         h = min(820, self.root.winfo_screenheight() - 90)
         self.root.geometry(f"{w}x{h}+20+20")
         self.root.minsize(900, 560)
+        while time.time() - debut_accueil < DUREE_ACCUEIL:
+            accueil.win.update()
+            time.sleep(0.03)
         accueil.fermer()
         self.root.deiconify()
         self.root.protocol("WM_DELETE_WINDOW", self.quitter)
@@ -2252,14 +2264,16 @@ class Application:
         ttk.Entry(haut, textvariable=self.v_alpha, width=7).pack(side="left")
         self.nb = ttk.Notebook(self.root)
         self.nb.pack(fill="both", expand=True, padx=6, pady=6)
-        self.familles = {}
+        self.familles, self.cadres = {}, {}
         for cle in FAMILLES:
             fam = Famille(self, cle)
             cadre = ttk.Frame(self.nb)
             self.nb.add(cadre, text=FAMILLES[cle]["titre"])
             fam.construire(cadre).pack(fill="both", expand=True)
             self.familles[cle] = fam
+            self.cadres[cle] = cadre
         self._page_rapport()
+        self.nb.select(self.cadres[ONGLET_DEFAUT])
         aide = ttk.Frame(self.nb)
         self.nb.add(aide, text="Aide")
         t = tk.Text(aide, wrap="word", padx=14, pady=10, background="white", relief="flat")
